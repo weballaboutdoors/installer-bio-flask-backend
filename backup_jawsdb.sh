@@ -18,7 +18,7 @@ echo "Database: $DB_NAME"
 BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql"
 
 # Use mysqldump to create the backup
-mysqldump --host=$DB_HOST --port=$DB_PORT --user=$DB_USER --password=$DB_PASSWORD --databases $DB_NAME --add-drop-table --no-tablespaces --single-transaction --set-gtid-purged=OFF > $BACKUP_FILE
+mysqldump --host=$DB_HOST --port=$DB_PORT --user=$DB_USER --password=$DB_PASSWORD --databases $DB_NAME --add-drop-table --no-tablespaces --single-transaction --set-gtid-purged=OFF --routines --triggers --events > $BACKUP_FILE
 
 echo "Backup completed: $BACKUP_FILE"
 echo "Backup contents:"
