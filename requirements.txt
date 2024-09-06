@@ -14,4 +14,4 @@ python-dotenv==0.19.1
 scrypt
 Flask-Limiter
 flask-jwt-extended
-Flask-SocketIO==5.1.1
+
