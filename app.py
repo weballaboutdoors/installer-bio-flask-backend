@@ -73,11 +73,14 @@ def create_app():
             return '.' in filename and \
                    filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
         limiter = Limiter(
-            get_remote_address,
-            app=app,
+            key_func=get_remote_address,
+            storage_uri=redis_url,
+            storage_options={"socket_connect_timeout": 30},
             default_limits=["200 per day", "50 per hour"]
         )
+        limiter.init_app(app)
 
         app.config['SESSION_COOKIE_SECURE'] = True
         app.config['SESSION_COOKIE_HTTPONLY'] = True
