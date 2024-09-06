@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 import logging
 import bcrypt
-from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_limiter import Limiter
 import re
 import base64
 import hashlib
@@ -21,6 +21,7 @@ from flask_mail import Mail, Message
 import secrets
 from utils import sanitize_log
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+from urllib.parse import urlparse
 
 load_dotenv()  # Load environment variables
 
@@ -51,17 +52,29 @@ def create_app():
         app = Flask(__name__)
         app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
         app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
-        CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://your-frontend-domain.com"]}})
+        CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "http://localhost:8000", "https://your-frontend-domain.com"]}})
         socketio = SocketIO(app, cors_allowed_origins="*")
 
-        # Create a connection pool
-        db_config = {
-            'host': os.getenv('DB_HOST'),
-            'user': os.getenv('DB_USER'),
-            'password': os.getenv('DB_PASSWORD'),
-            'database': os.getenv('DB_NAME'),
-            'port': os.getenv('DB_PORT')
-        }
+        # Parse JAWSDB_URL
+        if os.getenv('JAWSDB_URL'):
+            url = urlparse(os.getenv('JAWSDB_URL'))
+            db_config = {
+                'host': url.hostname,
+                'user': url.username,
+                'password': url.password,
+                'database': url.path[1:],
+                'port': url.port
+            }
+        else:
+            # Fallback to separate environment variables
+            db_config = {
+                'host': os.getenv('DB_HOST'),
+                'user': os.getenv('DB_USER'),
+                'password': os.getenv('DB_PASSWORD'),
+                'database': os.getenv('DB_NAME'),
+                'port': int(os.getenv('DB_PORT', 3306))  # Default to 3306 if not set
+            }
+
         connection_pool = pooling.MySQLConnectionPool(pool_name="mypool", pool_size=5, **db_config)
 
         # Configure upload folder for profile pictures
@@ -73,10 +86,15 @@ def create_app():
             return '.' in filename and \
                    filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+        if os.getenv('FLASK_ENV') == 'production':
+            redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+            storage_uri = redis_url
+        else:
+            storage_uri = "memory://"
+
         limiter = Limiter(
             key_func=get_remote_address,
-            storage_uri=redis_url,
+            storage_uri=storage_uri,
             storage_options={"socket_connect_timeout": 30},
             default_limits=["200 per day", "50 per hour"]
         )
@@ -117,29 +135,55 @@ def create_app():
         def register():
             data = request.json
             email = data.get('email')
-            name = data.get('name', 'Default Name')  # Provide a default name if not provided
-            
-            conn = connection_pool.get_connection()
-            cursor = conn.cursor(dictionary=True)
-            
-            # Check if user exists
-            cursor.execute("SELECT * FROM installer WHERE email = %s", (email,))
-            existing_user = cursor.fetchone()
-            
-            if existing_user:
-                # If user exists, delete it
-                cursor.execute("DELETE FROM installer WHERE email = %s", (email,))
-            
-            # Create new user
-            hashed_password = set_password(data['password'])
-            cursor.execute("INSERT INTO installer (email, name, city, password) VALUES (%s, %s, %s, %s)",
-                           (email, name, data['city'], hashed_password))
-            
-            conn.commit()
-            cursor.close()
-            conn.close()
-            
-            return jsonify({"message": "Installer registered successfully!"}), 201
+            name = data.get('name', 'Default Name')
+            city = data.get('city')
+            password = data.get('password')
+
+            print(f"Attempting to register user: {email}")  # New log
+
+            # Input validation
+            if not all([email, name, city, password]):
+                print(f"Missing required fields for {email}")  # New log
+                return jsonify({"error": "Missing required fields"}), 400
+
+            conn = None
+            cursor = None
+            try:
+                conn = connection_pool.get_connection()
+                print(f"Database connection established for {email}")  # New log
+                cursor = conn.cursor(dictionary=True)
+                
+                # Check if user exists
+                cursor.execute("SELECT * FROM installer WHERE email = %s", (email,))
+                existing_user = cursor.fetchone()
+                
+                if existing_user:
+                    print(f"User {email} already exists")  # New log
+                    return jsonify({"error": "Email already registered"}), 409
+                
+                # Create new user
+                hashed_password = set_password(password)
+                print(f"Inserting user {email} into database")  # New log
+                cursor.execute("INSERT INTO installer (email, name, city, password) VALUES (%s, %s, %s, %s)",
+                               (email, name, city, hashed_password))
+                conn.commit()
+                print(f"Transaction committed for user {email}")  # New log
+                
+                print(f"User {email} registered successfully")  # Existing log
+                return jsonify({"message": "Installer registered successfully!"}), 201
+
+            except mysql.connector.Error as err:
+                print(f"Database error for {email}: {err}")  # Modified log
+                return jsonify({"error": "Database error occurred"}), 500
+            except Exception as e:
+                print(f"Unexpected error for {email}: {e}")  # Modified log
+                return jsonify({"error": "An unexpected error occurred"}), 500
+            finally:
+                if cursor:
+                    cursor.close()
+                if conn:
+                    conn.close()
+                print(f"Database connection closed for {email}")  # New log
 
         @app.route('/login', methods=['POST'])
         @limiter.limit("10 per minute")
@@ -369,6 +413,48 @@ def create_app():
             # Delete user logic here
             return jsonify({"message": "User deleted"}), 200
 
+        @app.route('/test-db', methods=['GET'])
+        def test_db():
+            try:
+                conn = connection_pool.get_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT 1")
+                result = cursor.fetchone()
+                cursor.close()
+                conn.close()
+                return jsonify({"message": "Database connection successful", "result": result}), 200
+            except Exception as e:
+                return jsonify({"error": f"Database connection failed: {str(e)}"}), 500
+
+        @app.route('/check-user/<email>', methods=['GET'])
+        def check_user(email):
+            try:
+                conn = connection_pool.get_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT * FROM installer WHERE email = %s", (email,))
+                user = cursor.fetchone()
+                cursor.close()
+                conn.close()
+                if user:
+                    return jsonify({"message": f"User {email} found", "user": user}), 200
+                else:
+                    return jsonify({"message": f"User {email} not found"}), 404
+            except Exception as e:
+                return jsonify({"error": f"Error checking user: {str(e)}"}), 500
+
+        @app.route('/list-users', methods=['GET'])
+        def list_users():
+            try:
+                conn = connection_pool.get_connection()
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT email FROM installer")
+                users = cursor.fetchall()
+                cursor.close()
+                conn.close()
+                return jsonify({"users": [user['email'] for user in users]}), 200
+            except Exception as e:
+                return jsonify({"error": f"Error listing users: {str(e)}"}), 500
+
         return app, socketio, limiter, connection_pool
     except Exception as e:
         print(f"Error in create_app(): {e}")
@@ -380,7 +466,7 @@ app, socketio, limiter, connection_pool = create_app()
 
 if app is not None:
     if __name__ == '__main__':
-        port = int(os.environ.get('PORT', 5000))
+        port = int(os.environ.get('PORT', 5001))
         app.run(host='0.0.0.0', port=port)
 else:
     print("Failed to create app")

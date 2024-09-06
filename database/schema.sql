@@ -1,5 +1,5 @@
-CREATE DATABASE installers_db;
-USE installers_db;
+CREATE DATABASE k5whq2461jtx4q01;
+USE k5whq2461jtx4q01;
 
 CREATE TABLE installer (
     id INT AUTO_INCREMENT PRIMARY KEY,
