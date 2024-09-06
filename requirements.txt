@@ -16,3 +16,5 @@ Flask-Limiter
 flask-jwt-extended
 Flask-Mail
 bcrypt==3.2.0
+Flask-Limiter[redis]
+redis
