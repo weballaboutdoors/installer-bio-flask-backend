@@ -8,7 +8,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 import logging
-import scrypt
+import bcrypt
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import re
@@ -33,28 +33,18 @@ def validate_password(password):
             re.search(r"[A-Z]", password) and
             re.search(r"[a-z]", password) and
             re.search(r"[!@#$%^&*(),.?\":{}|<>]", password))
-# Generate scrypt hash for password
-def generate_scrypt_hash(password):
-    salt = os.urandom(16)
-    hash = hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1)
-    return f"$scrypt$n=16384,r=8,p=1${salt.hex()}${hash.hex()}"
 
-def verify_scrypt_hash(password, hash_string):
-    try:
-        algorithm, params, salt, hash = hash_string.split('$')[1:]
-        assert algorithm == 'scrypt'
-        n, r, p = [int(x.split('=')[1]) for x in params.split(',')]
-        salt = bytes.fromhex(salt)
-        hash = bytes.fromhex(hash)
-        return hashlib.scrypt(password.encode(), salt=salt, n=n, r=r, p=p) == hash
-    except (ValueError, AssertionError):
-        return False
+def generate_bcrypt_hash(password):
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+def verify_bcrypt_hash(password, hashed_password):
+    return bcrypt.checkpw(password.encode('utf-8'), hashed_password)
 
 def set_password(password):
-    return generate_scrypt_hash(password)
+    return generate_bcrypt_hash(password)
 
 def check_password(stored_password, provided_password):
-    return verify_scrypt_hash(provided_password, stored_password)
+    return verify_bcrypt_hash(provided_password, stored_password)
 
 def create_app():
     try:
@@ -66,10 +56,10 @@ def create_app():
 
         # Create a connection pool
         db_config = {
-            "host": os.getenv('DB_HOST'),
-            "user": os.getenv('DB_USER'),
-            "password": os.getenv('DB_PASSWORD'),
-            "database": os.getenv('DB_NAME')
+            'host': os.getenv('DB_HOST'),
+            'user': os.getenv('DB_USER'),
+            'password': os.getenv('DB_PASSWORD'),
+            'database': os.getenv('DB_NAME'),
         }
         connection_pool = pooling.MySQLConnectionPool(pool_name="mypool", pool_size=5, **db_config)
 
@@ -185,7 +175,7 @@ def create_app():
                 if user:
                     stored_password = user['password']
                     print(f"Stored password: {stored_password}")  # Add this line
-                    if verify_scrypt_hash(password, stored_password):
+                    if verify_bcrypt_hash(password, stored_password):
                         print("Password verified successfully")  # Add this line
                         access_token = create_access_token(identity=user['id'])
                         refresh_token = create_refresh_token(identity=user['id'])
@@ -340,7 +330,7 @@ def create_app():
             return jsonify({"message": "Password reset email sent", "token": token}), 200  # Return token for testing
         
         def update_user_password(email, new_password):
-            hashed_password = generate_scrypt_hash(new_password)
+            hashed_password = generate_bcrypt_hash(new_password)
             conn = connection_pool.get_connection()
             cursor = conn.cursor()
             cursor.execute("UPDATE installer SET password = %s WHERE email = %s", (hashed_password, email))
