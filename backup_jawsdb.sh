@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# The JAWSDB_URL is already set as an environment variable in Heroku
-# so we don't need to use the heroku command to get it
-
 # Parse the JAWSDB_URL
 DB_USER=$(echo $JAWSDB_URL | cut -d: -f2 | cut -d/ -f3)
 DB_PASSWORD=$(echo $JAWSDB_URL | cut -d: -f3 | cut -d@ -f1)
@@ -20,9 +17,10 @@ echo "Database: $DB_NAME"
 # Perform the backup
 BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql"
 
-# Use mysql instead of mysqldump
-mysql --host=$DB_HOST --port=$DB_PORT --user=$DB_USER --password=$DB_PASSWORD $DB_NAME -e "
+# Use a single mysql connection to perform all operations
+mysql --host=$DB_HOST --port=$DB_PORT --user=$DB_USER --password=$DB_PASSWORD $DB_NAME << EOF > $BACKUP_FILE
 SET group_concat_max_len = 1024 * 1024 * 1024;
+
 SELECT CONCAT(
     'DROP TABLE IF EXISTS \`', table_name, '\`;',
     '\n',
@@ -37,12 +35,12 @@ SELECT CONCAT(
 ) AS create_table
 FROM information_schema.columns
 WHERE table_schema = DATABASE()
-GROUP BY table_name;" > $BACKUP_FILE
+GROUP BY table_name;
 
-for table in $(mysql --host=$DB_HOST --port=$DB_PORT --user=$DB_USER --password=$DB_PASSWORD $DB_NAME -e "SHOW TABLES;" | tail -n +2); do
-    echo "Backing up table: $table"
-    mysql --host=$DB_HOST --port=$DB_PORT --user=$DB_USER --password=$DB_PASSWORD $DB_NAME -e "SELECT * FROM \`$table\`;" >> $BACKUP_FILE
-done
+SELECT CONCAT('SELECT * FROM \`', table_name, '\`;')
+FROM information_schema.tables
+WHERE table_schema = DATABASE();
+EOF
 
 echo "Backup completed: $BACKUP_FILE"
 echo "Backup contents:"
