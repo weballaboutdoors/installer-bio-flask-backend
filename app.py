@@ -60,6 +60,7 @@ def create_app():
             'user': os.getenv('DB_USER'),
             'password': os.getenv('DB_PASSWORD'),
             'database': os.getenv('DB_NAME'),
+            'port': os.getenv('DB_PORT')
         }
         connection_pool = pooling.MySQLConnectionPool(pool_name="mypool", pool_size=5, **db_config)
 
