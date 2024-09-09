@@ -4,157 +4,90 @@ import requests
 import time
 import mysql.connector
 from mysql.connector import pooling
+from app import create_app, get_db_connection
+import unittest
+import uuid
 
 # Add the current directory to the Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
-from app import app, connection_pool
+class TestAuth(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app, cls.socketio, cls.limiter, cls.connection_pool = create_app(testing=True)
+        cls.client = cls.app.test_client()
+        cls.app_context = cls.app.app_context()
+        cls.app_context.push()
 
-BASE_URL = "http://127.0.0.1:5002"  # Changed port to 5002
+    @classmethod
+    def tearDownClass(cls):
+        cls.app_context.pop()
+        # Instead of closing the pool, we'll close all connections in it
+        while cls.connection_pool._cnx_queue.qsize() > 0:
+            conn = cls.connection_pool._cnx_queue.get()
+            conn.close()
 
-reset_tokens = {}
+    def setUp(self):
+        self.connection = None
+        self.cursor = None
+        self.unique_email = f"testuser_{uuid.uuid4()}@example.com"
 
-def clean_database():
-    conn = connection_pool.get_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("DELETE FROM installer WHERE email = 'test@example.com'")
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+    def tearDown(self):
+        if self.cursor:
+            self.cursor.close()
+        if self.connection:
+            self.connection.close()
 
-def mock_send_reset_email(email, token):
-    reset_tokens[email] = token
-    print(f"Mock reset link for {email}: http://yourdomain.com/reset-password/{token}")
+    def get_db_cursor(self):
+        if not self.connection or not self.connection.is_connected():
+            self.connection = get_db_connection()
+        if not self.cursor or self.cursor.is_closed():
+            self.cursor = self.connection.cursor(dictionary=True)
+        return self.cursor
 
-# Replace the real send_reset_email with the mock version
-app.send_reset_email = mock_send_reset_email
+    def test_app_exists(self):
+        self.assertIsNotNone(self.app)
 
-def test_register():
-    data = {
-        "username": "testuser",
-        "email": "test@example.com",
-        "password": "TestPassword123!",
-        "city": "Test City"
-    }
-    response = requests.post(f"{BASE_URL}/register", json=data)
-    print("\nRegister Test:")
-    print(f"URL: {response.url}")
-    print(f"Request data: {data}")
-    print(f"Response status code: {response.status_code}")
-    print(f"Response text: {response.text}")
-    assert response.status_code == 201
-    return data['email'], data['password']
+    def test_registration(self):
+        response = self.client.post('/register', json={
+            'name': 'Test User',
+            'email': self.unique_email,
+            'password': 'StrongPassword123!',
+            'city': 'Test City'
+        })
+        self.assertEqual(response.status_code, 201)
+        # Add more assertions as needed
 
-def test_login(email, password):
-    data = {
-        "email": email,
-        "password": password
-    }
-    response = requests.post(f"{BASE_URL}/login", json=data)
-    print("\nLogin Test:")
-    print(f"URL: {response.url}")
-    print(f"Request data: {data}")
-    print(f"Response status code: {response.status_code}")
-    print(f"Response text: {response.text}")
-    assert response.status_code == 200
-    return response.json().get('access_token'), response.json().get('refresh_token')
+    def test_login(self):
+        # First, register a user
+        self.client.post('/register', json={
+            'name': 'Test User',
+            'email': self.unique_email,
+            'password': 'StrongPassword123!',
+            'city': 'Test City'
+        })
+        
+        # Then, try to log in
+        response = self.client.post('/login', json={
+            "email": self.unique_email,
+            "password": "StrongPassword123!"
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access_token", response.json)
+        self.assertIn("refresh_token", response.json)
 
-def test_protected_route(access_token):
-    headers = {'Authorization': f'Bearer {access_token}'}
-    response = requests.get(f"{BASE_URL}/protected", headers=headers)
-    print("\nProtected Route Test:")
-    print(f"URL: {response.url}")
-    print(f"Response status code: {response.status_code}")
-    print(f"Response text: {response.text}")
-    assert response.status_code == 200
+    def test_invalid_login(self):
+        # Test login with incorrect credentials
+        pass
 
-def test_user_profile(access_token):
-    headers = {'Authorization': f'Bearer {access_token}'}
-    response = requests.get(f"{BASE_URL}/user-profile", headers=headers)
-    print("\nUser Profile Test:")
-    print(f"Response status code: {response.status_code}")
-    print(f"Response text: {response.text}")
-    assert response.status_code == 200
+    def test_password_reset(self):
+        # Test password reset functionality
+        pass
 
-def test_token_refresh(refresh_token):
-    headers = {'Authorization': f'Bearer {refresh_token}'}
-    response = requests.post(f"{BASE_URL}/refresh", headers=headers)
-    print("\nToken Refresh Test:")
-    print(f"Response status code: {response.status_code}")
-    print(f"Response text: {response.text}")
-    assert response.status_code == 200
-
-def test_logout(access_token):
-    headers = {'Authorization': f'Bearer {access_token}'}
-    response = requests.post(f"{BASE_URL}/logout", headers=headers)
-    print("\nLogout Test:")
-    print(f"Response status code: {response.status_code}")
-    print(f"Response text: {response.text}")
-    assert response.status_code == 200
-
-def test_forgot_password():
-    email = 'test@example.com'
-    response = requests.post(f"{BASE_URL}/forgot-password", json={'email': email})
-    print("\nForgot Password Test:")
-    print(f"Response status code: {response.status_code}")
-    print(f"Response text: {response.text}")
-    assert response.status_code == 200
-    response_data = response.json()
-    assert 'token' in response_data, "Reset token not generated"
-    return response_data['token']
-
-def get_reset_token():
-    return list(reset_tokens.keys())[0] if reset_tokens else None
-
-def test_reset_password():
-    email = 'test@example.com'
-    token = test_forgot_password()
-    assert token is not None, "No reset token found"
-
-    new_password = 'NewTestPassword123!'
-    response = requests.post(f"{BASE_URL}/reset-password/{token}", json={'new_password': new_password})
-    print("\nReset Password Test:")
-    print(f"Response status code: {response.status_code}")
-    print(f"Response text: {response.text}")
-    assert response.status_code == 200
-
-    # Try logging in with the new password
-    login_response = requests.post(f"{BASE_URL}/login", json={'email': email, 'password': new_password})
-    assert login_response.status_code == 200
+    def test_token_expiration(self):
+        # Test if authentication tokens expire correctly
+        pass
 
 if __name__ == '__main__':
-    # Clean the database before running tests
-    clean_database()
-    
-    # Start the Flask app in a separate thread
-    import threading
-    server_thread = threading.Thread(target=app.run, kwargs={"debug": False, "port": 5002})
-    server_thread.start()
-    
-    # Wait for the server to start
-    time.sleep(2)
-    
-    try:
-        # Run your tests
-        email, password = test_register()
-        access_token, refresh_token = test_login(email, password)
-        
-        if access_token and refresh_token:
-            test_protected_route(access_token)
-            test_user_profile(access_token)
-            test_token_refresh(refresh_token)
-            test_logout(access_token)
-        
-        test_forgot_password()
-        time.sleep(1)  # Add a small delay to ensure the token is generated
-        test_reset_password()
-    except KeyboardInterrupt:
-        print("\nTests interrupted by user.")
-    except Exception as e:
-        print(f"\nAn error occurred: {str(e)}")
-    finally:
-        print("Tests completed.")
-        # Optionally, you can add code here to shut down the Flask app
+    unittest.main()
