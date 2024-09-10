@@ -29,14 +29,110 @@
         <input type="password" id="loginPassword" placeholder="Password" required>
         <button type="submit">Login</button>
     </form>
+    
 
     <div id="messages"></div>
+
+    <h2>Search Skillsets</h2>
+    <form id="searchSkillsetForm">
+        <input type="text" id="skillsetSearch" placeholder="Enter skillset">
+        <input type="text" id="skillsetCity" placeholder="Enter city">
+        <button type="submit">Search</button>
+    </form>
+    <div id="skillsetResults"></div>
+
+    <h2>Search Jobs</h2>
+    <form id="searchJobForm">
+        <input type="text" id="jobSearch" placeholder="Enter job type">
+        <input type="text" id="jobCity" placeholder="Enter city">
+        <button type="submit">Search</button>
+    </form>
+    <div id="jobResults"></div>
+
+    <h2>Contractor Application</h2>
+    <form id="contractorApplicationForm" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="company_name" placeholder="Company Name" required>
+        <input type="text" name="first_name" placeholder="First Name" required>
+        <input type="text" name="last_name" placeholder="Last Name" required>
+        <input type="text" name="address" placeholder="Address" required>
+        <input type="text" name="city" placeholder="City" required>
+        <input type="text" name="state" placeholder="State" required>
+        <input type="text" name="zip_code" placeholder="Zip Code" required>
+        <input type="tel" name="main_phone" placeholder="Main Phone" required>
+        <input type="tel" name="mobile_phone" placeholder="Mobile Phone (Optional)">
+        <input type="email" name="email" placeholder="Email" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <input type="password" name="confirm_password" placeholder="Confirm Password" required>
+        
+        <fieldset>
+            <legend>Choose Your Skillsets:</legend>
+            <label><input type="checkbox" name="skills" value="Handyman"> Handyman</label>
+            <label><input type="checkbox" name="skills" value="Locksmith"> Locksmith</label>
+            <label><input type="checkbox" name="skills" value="Door Installer"> Door Installer</label>
+            <label><input type="checkbox" name="skills" value="Window Installer"> Window Installer</label>
+            <label><input type="checkbox" name="skills" value="Glass Contractor"> Glass Contractor</label>
+            <label><input type="checkbox" name="skills" value="Window Repair and Service"> Window Repair and Service</label>
+            <label><input type="checkbox" name="skills" value="Door Repair and Service"> Door Repair and Service</label>
+        </fieldset>
+        
+        <input type="text" name="other_skills" placeholder="Other Skills">
+        <input type="number" name="years_experience" placeholder="Years of Experience" required>
+        
+        <fieldset>
+            <legend>Does your business have insurance?</legend>
+            <label><input type="radio" name="has_insurance" value="Yes" required> Yes</label>
+            <label><input type="radio" name="has_insurance" value="No" required> No</label>
+        </fieldset>
+        
+        <input type="text" name="insurance_type" placeholder="Type of Insurance">
+        
+        <fieldset>
+            <legend>Does your business have a certification?</legend>
+            <label><input type="radio" name="has_certification" value="Yes" required> Yes</label>
+            <label><input type="radio" name="has_certification" value="No" required> No</label>
+        </fieldset>
+        
+        <input type="text" name="certification_type" placeholder="Type of Certification">
+        
+        <fieldset>
+            <legend>Allow customers to leave reviews?</legend>
+            <label><input type="radio" name="allow_reviews" value="Yes" required> Yes</label>
+            <label><input type="radio" name="allow_reviews" value="No" required> No</label>
+        </fieldset>
+        
+        <textarea name="business_description" placeholder="Describe your business" required></textarea>
+        
+        <input type="file" name="photos" multiple accept="image/*">
+        
+        <button type="submit">Submit Application</button>
+    </form>
 
     <script>
         const API_URL = 'http://localhost:5001'; // Change this to your backend URL
 
         function displayMessage(message) {
             document.getElementById('messages').innerHTML += `<p>${message}</p>`;
+        }
+
+        function login(email, password) {
+            return fetch(`${API_URL}/login`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, password })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        throw new Error('Invalid credentials');
+                    }
+                    throw new Error('Login failed');
+                }
+                return response.json();
+            });
         }
 
         document.getElementById('registerForm').addEventListener('submit', async (e) => {
@@ -50,7 +146,8 @@
                 const response = await fetch(`${API_URL}/register`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, name, city, password })
+                    body: JSON.stringify({ email, name, city, password }),
+                    credentials: 'include'
                 });
                 const data = await response.json();
                 displayMessage(`Registration: ${data.message}`);
@@ -59,26 +156,92 @@
             }
         });
 
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
-
-            try {
-                const response = await fetch(`${API_URL}/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
+            
+            login(email, password)
+                .then(data => {
+                    console.log('Login successful:', data);
+                    if (data.access_token) {
+                        // Store the token securely (e.g., in localStorage)
+                        localStorage.setItem('access_token', data.access_token);
+                        displayMessage(`Login successful. Access token: ${data.access_token}`);
+                    } else {
+                        displayMessage('Login successful, but no access token received.');
+                    }
+                    // You can redirect the user or update the UI here
+                })
+                .catch(error => {
+                    console.error('Login error:', error.message);
+                    displayMessage(`Login error: ${error.message}`);
                 });
+        });
+
+        document.getElementById('searchSkillsetForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const skillset = document.getElementById('skillsetSearch').value;
+            const city = document.getElementById('skillsetCity').value;
+            try {
+                const response = await fetch(`${API_URL}/search-skillsets?skillset=${encodeURIComponent(skillset)}&city=${encodeURIComponent(city)}`);
                 const data = await response.json();
-                displayMessage(`Login: ${data.message}`);
-                if (data.access_token) {
-                    displayMessage(`Access Token: ${data.access_token}`);
-                }
+                displayResults('skillsetResults', data);
             } catch (error) {
-                displayMessage(`Login error: ${error.message}`);
+                displayMessage(`Skillset search error: ${error.message}`);
             }
         });
+
+        document.getElementById('searchJobForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const jobType = document.getElementById('jobSearch').value;
+            const city = document.getElementById('jobCity').value;
+            try {
+                const response = await fetch(`${API_URL}/search-jobs?job_type=${encodeURIComponent(jobType)}&city=${encodeURIComponent(city)}`);
+                const data = await response.json();
+                displayResults('jobResults', data);
+            } catch (error) {
+                displayMessage(`Job search error: ${error.message}`);
+            }
+        });
+
+        document.getElementById('contractorApplicationForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            // Add CSRF token if not already included
+            
+            try {
+                const response = await fetch(`${API_URL}/apply`, {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                alert(data.message);
+            } catch (error) {
+                console.error('Error:', error);
+                alert(`An error occurred: ${error.message}`);
+            }
+        });
+
+        function displayResults(elementId, results) {
+            const resultsDiv = document.getElementById(elementId);
+            resultsDiv.innerHTML = '';
+            if (results.length === 0) {
+                resultsDiv.innerHTML = '<p>No results found.</p>';
+            } else {
+                const ul = document.createElement('ul');
+                results.forEach(result => {
+                    const li = document.createElement('li');
+                    li.textContent = `${result.name} (${result.email}) - ${result.city} - ${result.skillset || result.job_type}`;
+                    ul.appendChild(li);
+                });
+                resultsDiv.appendChild(ul);
+            }
+        }
     </script>
 </body>
 </html>
