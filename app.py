@@ -91,10 +91,7 @@ def create_app(testing=False):
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
     app.config['SESSION_TYPE'] = 'filesystem'
     Session(app)
-    CORS(app, resources={r"/*": {
-        "origins": ["http://localhost:8000", "http://127.0.0.1:8000"],
-        "supports_credentials": True
-    }})
+    CORS(app, resources={r"/*": {"origins": ["http://127.0.0.1:5501", "http://localhost:5501"]}})
     socketio = SocketIO(app, cors_allowed_origins="*")
 
     # Parse JAWSDB_URL
@@ -144,6 +141,13 @@ def create_app(testing=False):
     jwt = JWTManager(app)
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=15)
     app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
+
+    # Configure application to store JWTs in cookies
+    app.config['JWT_TOKEN_LOCATION'] = ['cookies']
+    app.config['JWT_COOKIE_CSRF_PROTECT'] = True
+    app.config['JWT_COOKIE_SECURE'] = True  # for production, use HTTPS
+    app.config['JWT_ACCESS_COOKIE_PATH'] = '/api/'
+    app.config['JWT_REFRESH_COOKIE_PATH'] = '/token/refresh'
 
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_payload):
@@ -214,7 +218,9 @@ def create_app(testing=False):
 
             if user and check_password(user['password'], password):
                 access_token = create_access_token(identity=email)
-                return jsonify({"message": "Login successful", "access_token": access_token}), 200
+                response = jsonify({"message": "Login successful", "access_token": access_token})
+                response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5501')
+                return response, 200
             else:
                 return jsonify({"error": "Invalid credentials"}), 401
         except Exception as e:
