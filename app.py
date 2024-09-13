@@ -101,6 +101,17 @@ def create_app(testing=False):
     socketio = SocketIO(app, cors_allowed_origins="*")
 
     # Parse JAWSDB_URL
+
+# Define db_config at the beginning of the function
+    db_config = {
+        'host': os.getenv('DB_HOST'),
+        'user': os.getenv('DB_USER'),
+        'password': os.getenv('DB_PASSWORD'),
+        'database': os.getenv('DB_NAME'),
+        'port': int(os.getenv('DB_PORT', 3306)),
+    }
+
+    # Parse JAWSDB_URL
     if os.getenv('JAWSDB_URL'):
         url = urlparse(os.getenv('JAWSDB_URL'))
         db_config.update({
@@ -110,15 +121,8 @@ def create_app(testing=False):
             'database': url.path[1:],
             'port': url.port or 3306,
         })
-    else:
-        # Your local database configuration
-       db_config = {
-           'user': os.getenv('DB_USER'),
-           'password': os.getenv('DB_PASSWORD'),
-           'host': os.getenv('DB_HOST'),
-           'database': os.getenv('DB_NAME'),
-           'port': int(os.getenv('DB_PORT', 3306)),
-       }
+
+        
 
     # Close any existing connections
     mysql.connector.connect(**db_config).close()
