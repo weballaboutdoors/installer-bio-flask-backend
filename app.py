@@ -108,8 +108,17 @@ def create_app(testing=False):
             'user': url.username,
             'password': url.password,
             'database': url.path[1:],
-            'port': url.port,
+            'port': url.port or 3306,
         })
+    else:
+        # Your local database configuration
+       db_config = {
+           'user': os.getenv('DB_USER'),
+           'password': os.getenv('DB_PASSWORD'),
+           'host': os.getenv('DB_HOST'),
+           'database': os.getenv('DB_NAME'),
+           'port': int(os.getenv('DB_PORT', 3306)),
+       }
 
     # Close any existing connections
     mysql.connector.connect(**db_config).close()
