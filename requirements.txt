@@ -19,3 +19,4 @@ bcrypt==3.2.0
 Flask-Limiter[redis]
 redis
 Flask-Session
+tenacity

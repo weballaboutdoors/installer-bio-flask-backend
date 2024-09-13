@@ -22,6 +22,7 @@ import time
 from mysql.connector.errors import PoolError
 from functools import wraps
 from flask_session import Session
+from tenacity import retry, stop_after_attempt, wait_fixed
 
 load_dotenv()  # Load environment variables
 
@@ -64,7 +65,7 @@ db_config = {
 connection_pool = None
 
 def create_connection_pool(max_attempts=3):
-    pool_size = 10
+    pool_size = 5  # Reduced from 10 to 5
     for attempt in range(max_attempts):
         try:
             return mysql.connector.pooling.MySQLConnectionPool(
@@ -81,8 +82,13 @@ def create_connection_pool(max_attempts=3):
             else:
                 raise
 
+@contextmanager
 def get_db_connection():
-    return connection_pool.get_connection()
+    connection = connection_pool.get_connection()
+    try:
+        yield connection
+    finally:
+        connection.close()
 
 def create_app(testing=False):
     global connection_pool
