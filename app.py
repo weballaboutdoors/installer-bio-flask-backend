@@ -97,7 +97,7 @@ def create_app(testing=False):
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
     app.config['SESSION_TYPE'] = 'filesystem'
     Session(app)
-    CORS(app, resources={r"/*": {"origins": ["http://127.0.0.1:5501", "http://localhost:5501"], "allow_headers": ["Content-Type", "Authorization"]}})
+    CORS(app, resources={r"/*": {"origins": ["http://127.0.0.1:5501", "https://roaring-chebakia-ec92a0.netlify.app/" "http://localhost:5501"], "allow_headers": ["Content-Type", "Authorization"]}})
     socketio = SocketIO(app, cors_allowed_origins="*")
 
     # Parse JAWSDB_URL
