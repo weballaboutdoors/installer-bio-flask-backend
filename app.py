@@ -161,12 +161,14 @@ def create_app(testing=False):
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=15)
     app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
 
-    # Configure application to store JWTs in cookies
-    app.config['JWT_TOKEN_LOCATION'] = ['cookies']
+    # Configure application to store JWTs in cookies and accept from headers
+    app.config['JWT_TOKEN_LOCATION'] = ['cookies', 'headers']
     app.config['JWT_COOKIE_CSRF_PROTECT'] = True
     app.config['JWT_COOKIE_SECURE'] = True  # for production, use HTTPS
     app.config['JWT_ACCESS_COOKIE_PATH'] = '/api/'
     app.config['JWT_REFRESH_COOKIE_PATH'] = '/token/refresh'
+    app.config['JWT_HEADER_NAME'] = 'Authorization'
+    app.config['JWT_HEADER_TYPE'] = 'Bearer'
 
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_payload):
